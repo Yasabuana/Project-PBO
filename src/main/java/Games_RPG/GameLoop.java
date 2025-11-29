@@ -40,7 +40,7 @@ public class GameLoop extends Application {
     private Set<KeyCode> activeKeys = new HashSet<>();
 
     // --- VARIABEL GAMEPLAY ---
-    private Character player;
+    private Player player;
     private Enemy slime;
     private boolean isSlimeDead = false;
     
@@ -69,6 +69,7 @@ public class GameLoop extends Application {
     public void start(Stage primaryStage) {
         
         primaryStage.setTitle("Game RPG Project PBO - Kelompok 5");
+     
 
         //VARIABEL SCREENWIDTH & HEIGHT 
         Canvas canvas = new Canvas(screenWidth, screenHeight);
@@ -86,7 +87,7 @@ public class GameLoop extends Application {
         primaryStage.show();
         
         // Inisialisasi Objek
-        player = new Fighter("Hero", 100, 300);
+        player = new Player(this, "Hero", 100, 300);
         slime = new Enemy("Slime", 50, 5, 10, 600, 300);
 
         // Set State Awal
@@ -115,32 +116,66 @@ public class GameLoop extends Application {
             case PLAYING:
              
                 
-                //  Gerak Player
-                double oldX = player.getPositionX();
-                if (activeKeys.contains(KeyCode.A)) player.moveLeft();
-                if (activeKeys.contains(KeyCode.D)) player.moveRight();
-
-                if (slime.isAlive() && isColliding(player, slime)) {
-                    player.setPosition(oldX, player.getPositionY());
-                }
-
-                double oldY = player.getPositionY();
-                if (activeKeys.contains(KeyCode.W)) player.moveUp();
-                if (activeKeys.contains(KeyCode.S)) player.moveDown();
                 
+                // --- 1. UPDATE PLAYER (Gerak, Animasi Jalan & Serang) ---
+                // Simpan posisi lama sebelum bergerak (untuk collision)
+                double oldX = player.getPositionX();
+                double oldY = player.getPositionY();
+                
+                // INI KUNCINYA: Biarkan class Player yang mengurus gerak & animasi sendiri
+                player.update(activeKeys);
+
+                // --- 2. CEK COLLISION (Agar tidak tembus musuh) ---
+                // Kalau setelah update() ternyata nabrak, kembalikan ke posisi lama
                 if (slime.isAlive() && isColliding(player, slime)) {
-                    player.setPosition(player.getPositionX(), oldY);
+                    player.setPosition(oldX, oldY);
                 }
 
-                // Serangan Player
+                // --- 3. LOGIKA SERANGAN (DAMAGE) ---
+                // Animasi serangan sudah diurus player.update(), ini logika damage-nya
                 if (activeKeys.contains(KeyCode.SPACE)) {
+                    // Cek cooldown damage
                     if ((globalNanoTime - lastPlayerAttackTime) > PLAYER_ATTACK_COOLDOWN_NS) {
+                        // Cek jarak dan status musuh
                         if (getDistance(player, slime) < 50 && slime.isAlive()) {
-                            player.basicAttack(slime); 
+                            player.basicAttack(slime); // Kurangi HP musuh
                             lastPlayerAttackTime = globalNanoTime;
                         }
                     }
                 }
+                
+                // --- 4. AI SLIME ---
+                if (slime.isAlive() && player.isAlive()) {
+                    double distance = getDistance(player, slime);
+                    
+                    if (distance < ATTACK_RANGE) { 
+                        if ((globalNanoTime - lastSlimeAttackTime) > SLIME_ATTACK_COOLDOWN_NS) {
+                            slime.basicAttack(player);
+                            lastSlimeAttackTime = globalNanoTime;
+                        }
+                    }
+                    else if (distance < AGGRO_RANGE) {
+                        double dx = player.getPositionX() - slime.getPositionX();
+                        double dy = player.getPositionY() - slime.getPositionY();
+                        double slimeSpeed = 2.0; 
+                        
+                        if (distance > 0) { 
+                            double moveX = (dx / distance) * slimeSpeed;
+                            double moveY = (dy / distance) * slimeSpeed;
+                            
+                            slime.setPosition(slime.getPositionX() + moveX, slime.getPositionY() + moveY);
+                        }
+                    }
+                }
+                
+                // --- 5. LOOT DROP ---
+                if (!isSlimeDead && !slime.isAlive() ) {
+                    isSlimeDead = true;
+                    Potion loot = new Potion("Small Potion", "Common", 30);
+                    player.addItemToInventory(loot);
+                    System.out.println(slime.getName() + " dropped a " + loot.getItemName());
+                }
+                
                 
                 //  AI Slime
                 if (slime.isAlive() && player.isAlive()) {
@@ -200,8 +235,7 @@ public class GameLoop extends Application {
                 
                 
                 // Gambar Player
-                gc.setFill(Color.BLUE);
-                gc.fillRect(player.getPositionX(), player.getPositionY(), 40, 40); 
+                player.draw(gc);
                 gc.setFill(Color.WHITE);
                 gc.fillText(player.getName(), player.getPositionX(), player.getPositionY() - 20);
                 gc.fillText("HP: " + player.getHealth(), player.getPositionX(), player.getPositionY() - 5);
