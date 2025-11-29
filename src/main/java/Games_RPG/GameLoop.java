@@ -21,26 +21,32 @@ import javafx.stage.Stage;
 
 public class GameLoop extends Application {
 
-    // --- 1. SETTINGAN LAYAR (Fix dari Checklist) ---
-    // Agar konsisten dengan aset visual temanmu
-    final int originalTileSize = 16; // Ukuran asli sprite: 16x16 pixel
-    final int scale = 3; // Skala perbesaran
+    final int originalTileSize = 16; 
+    final int scale = 3; 
+    public final int tileSize = originalTileSize * scale; // 48x48
 
-    public final int tileSize = originalTileSize * scale; // 48x48 pixel
-    public final int maxScreenCol = 16; // Lebar: 16 tile
-    public final int maxScreenRow = 12; // Tinggi: 12 tile
-
-    // Ukuran layar final (768 x 576 pixel)
-    public final int screenWidth = tileSize * maxScreenCol; 
-    public final int screenHeight = tileSize * maxScreenRow; 
-    // -----------------------------------------------------------
-
+    // --- 2. SETTINGAN LAYAR (KAMERA) ---
+    // Variabel ini HARUS ADA sebelum screenWidth dihitung
+    public final int maxScreenCol = 16; 
+    public final int maxScreenRow = 12; 
+    
+    // Baru hitung ini (menggunakan variabel di atasnya)
+    public final int screenWidth = tileSize * maxScreenCol;  
+    public final int screenHeight = tileSize * maxScreenRow;
+    
+    public final int maxWorldCol = 50; 
+    public final int maxWorldRow = 50; 
+    public final int worldWidth = tileSize * maxWorldCol;
+    public final int worldHeight = tileSize * maxWorldRow;
+    
     private GraphicsContext gc;
     public static GameState gameState;
     private Set<KeyCode> activeKeys = new HashSet<>();
+    
+    public TileManager tileManager;
 
     // --- VARIABEL GAMEPLAY ---
-    private Player player;
+    public Player player;
     private Enemy slime;
     private boolean isSlimeDead = false;
     
@@ -86,9 +92,12 @@ public class GameLoop extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
         
+        tileManager = new TileManager(this);
         // Inisialisasi Objek
-        player = new Player(this, "Hero", 100, 300);
-        slime = new Enemy("Slime", 50, 5, 10, 600, 300);
+        player = new Player(this, "Hero", 500, 500);
+        slime = new Enemy("Slime", 50, 5, 10, 500, 700);
+        slime = new Enemy("Slime", 50, 5, 10, 600, 740);
+        slime = new Enemy("Slime", 50, 5, 10, 800, 800);
 
         // Set State Awal
         gameState = GameState.MENU;
@@ -104,6 +113,7 @@ public class GameLoop extends Application {
         gameLoop.start(); 
     }
     
+    // --- METODE UPDATE (OTAK) ---
     private void update() {
         switch(gameState) {
             case MENU:
@@ -114,37 +124,29 @@ public class GameLoop extends Application {
                 break;
                 
             case PLAYING:
-             
-                
-                
-                // --- 1. UPDATE PLAYER (Gerak, Animasi Jalan & Serang) ---
-                // Simpan posisi lama sebelum bergerak (untuk collision)
+                // 1. UPDATE PLAYER (Gerak, Animasi, Serang)
                 double oldX = player.getPositionX();
                 double oldY = player.getPositionY();
                 
-                // INI KUNCINYA: Biarkan class Player yang mengurus gerak & animasi sendiri
-                player.update(activeKeys);
+                player.update(activeKeys); // Biarkan Player urus diri sendiri
 
-                // --- 2. CEK COLLISION (Agar tidak tembus musuh) ---
-                // Kalau setelah update() ternyata nabrak, kembalikan ke posisi lama
+                // 2. CEK COLLISION
                 if (slime.isAlive() && isColliding(player, slime)) {
                     player.setPosition(oldX, oldY);
                 }
 
-                // --- 3. LOGIKA SERANGAN (DAMAGE) ---
-                // Animasi serangan sudah diurus player.update(), ini logika damage-nya
+                // 3. LOGIKA DAMAGE (Saat Player Serang)
                 if (activeKeys.contains(KeyCode.SPACE)) {
-                    // Cek cooldown damage
                     if ((globalNanoTime - lastPlayerAttackTime) > PLAYER_ATTACK_COOLDOWN_NS) {
-                        // Cek jarak dan status musuh
                         if (getDistance(player, slime) < 50 && slime.isAlive()) {
-                            player.basicAttack(slime); // Kurangi HP musuh
+                            player.basicAttack(slime); 
                             lastPlayerAttackTime = globalNanoTime;
                         }
                     }
                 }
                 
-                // --- 4. AI SLIME ---
+                // 4. AI SLIME (Kejar & Serang)
+             
                 if (slime.isAlive() && player.isAlive()) {
                     double distance = getDistance(player, slime);
                     
@@ -155,72 +157,85 @@ public class GameLoop extends Application {
                         }
                     }
                     else if (distance < AGGRO_RANGE) {
+                        // Hitung arah
                         double dx = player.getPositionX() - slime.getPositionX();
                         double dy = player.getPositionY() - slime.getPositionY();
-                        double slimeSpeed = 2.0; 
+                        
+                        // Set kecepatan slime (PENTING: update variabel speed di entity juga biar collision akurat)
+                        double slimeSpeed = 1.0; 
+                        slime.speed = slimeSpeed; // Sinkronkan speed entity
                         
                         if (distance > 0) { 
                             double moveX = (dx / distance) * slimeSpeed;
                             double moveY = (dy / distance) * slimeSpeed;
                             
-                            slime.setPosition(slime.getPositionX() + moveX, slime.getPositionY() + moveY);
+                            // --- CEK TABRAKAN SUMBU X ---
+                            boolean hitWallX = false;
+                            if (moveX > 0) hitWallX = tileManager.checkCollision(slime, "right");
+                            else if (moveX < 0) hitWallX = tileManager.checkCollision(slime, "left");
+                            
+                            double nextX = slime.getPositionX() + moveX;
+                            // Cek tabrak player di X
+                            boolean hitPlayerX = nextX < player.getPositionX() + 40 &&
+                                                 nextX + 30 > player.getPositionX() &&
+                                                 slime.getPositionY() < player.getPositionY() + 40 &&
+                                                 slime.getPositionY() + 30 > player.getPositionY();
+
+                            // Kalau aman (gak nabrak tembok & gak nabrak player), jalan X
+                            if (!hitWallX && !hitPlayerX) {
+                                slime.setPosition(nextX, slime.getPositionY());
+                            }
+
+                            // --- CEK TABRAKAN SUMBU Y ---
+                            boolean hitWallY = false;
+                            if (moveY > 0) hitWallY = tileManager.checkCollision(slime, "down");
+                            else if (moveY < 0) hitWallY = tileManager.checkCollision(slime, "up");
+                            
+                            double nextY = slime.getPositionY() + moveY;
+                            // Cek tabrak player di Y
+                            boolean hitPlayerY = slime.getPositionX() < player.getPositionX() + 40 &&
+                                                 slime.getPositionX() + 30 > player.getPositionX() &&
+                                                 nextY < player.getPositionY() + 40 &&
+                                                 nextY + 30 > player.getPositionY();
+
+                            // Kalau aman, jalan Y
+                            if (!hitWallY && !hitPlayerY) {
+                                slime.setPosition(slime.getPositionX(), nextY);
+                            }
                         }
                     }
                 }
                 
-                // --- 5. LOOT DROP ---
+               // 5. LOOT DROP (DENGAN SISTEM GACHA)
                 if (!isSlimeDead && !slime.isAlive() ) {
                     isSlimeDead = true;
-                    Potion loot = new Potion("Small Potion", "Common", 30);
-                    player.addItemToInventory(loot);
-                    System.out.println(slime.getName() + " dropped a " + loot.getItemName());
-                }
-                
-                
-                //  AI Slime
-                if (slime.isAlive() && player.isAlive()) {
-                    double distance = getDistance(player, slime);
                     
-                    if (distance < ATTACK_RANGE) { 
-                        if ((globalNanoTime - lastSlimeAttackTime) > SLIME_ATTACK_COOLDOWN_NS) {
-                            slime.basicAttack(player);
-                            lastSlimeAttackTime = globalNanoTime;
-                        }
-                    }
-                    else if (distance < AGGRO_RANGE) {
-                        double dx = player.getPositionX() - slime.getPositionX();
-                        double dy = player.getPositionY() - slime.getPositionY();
-                        double slimeSpeed = 2.0; 
+                    // Minta item dari musuh
+                    Item loot = slime.getLoot();
+                    
+                    if (loot != null) {
+                        // Kalau dapat item, masukkan ke tas player
+                        player.addItemToInventory(loot);
                         
-                        if (distance > 0) { 
-                            double moveX = (dx / distance) * slimeSpeed;
-                            double moveY = (dy / distance) * slimeSpeed;
-                            slime.setPosition(slime.getPositionX() + moveX, slime.getPositionY() + moveY);
+                        // Cek tipe item untuk pesan yang lebih detail
+                        if (loot instanceof Weapon) {
+                            System.out.println("WOW! " + slime.getName() + " dropped a WEAPON: " + loot.getItemName());
+                        } else {
+                            System.out.println(slime.getName() + " dropped a " + loot.getItemName());
                         }
+                    } else {
+                        System.out.println(slime.getName() + " died but dropped nothing.");
                     }
                 }
-                
-                // 4. Loot Drop 
-                if (!isSlimeDead && !slime.isAlive() ) {
-                    isSlimeDead = true;
-                   
-                    Potion loot = new Potion("Small Potion", "Common", 30);
-                    player.addItemToInventory(loot);
-                    System.out.println(slime.getName() + " dropped a " + loot.getItemName());
-                }
-                
-              
-                break;
+                break; // Break yang benar
                 
             case GAME_OVER:
                 if (activeKeys.contains(KeyCode.ENTER)) {
                     gameState = GameState.MENU;
-               
                 }
                 break;
         }
     }
-    
  
     private void render() {
         gc.setFill(Color.BLACK);
@@ -233,25 +248,45 @@ public class GameLoop extends Application {
                 
             case PLAYING:
                 
-                
+                if (tileManager != null) {
+                    tileManager.draw(gc);
+                 }
                 // Gambar Player
                 player.draw(gc);
                 gc.setFill(Color.WHITE);
-                gc.fillText(player.getName(), player.getPositionX(), player.getPositionY() - 20);
-                gc.fillText("HP: " + player.getHealth(), player.getPositionX(), player.getPositionY() - 5);
+                gc.fillText(player.getName(), player.screenX, player.screenY - 20);
+                gc.fillText("HP: " + player.getHealth(), player.screenX, player.screenY - 5);
 
                 // Gambar Slime
+                // --- GAMBAR SLIME (DENGAN KAMERA) ---
                 if (slime.isAlive()) {
-                    gc.setFill(Color.GREEN);
-                } else {
-                    gc.setFill(Color.DARKRED);
+                    // 1. Hitung Posisi Slime di Layar (Rumus Kamera)
+                    // Posisi Screen = Posisi Dunia Slime - Posisi Dunia Player + Posisi Tengah Layar
+                    double slimeScreenX = slime.getPositionX() - player.getPositionX() + player.screenX;
+                    double slimeScreenY = slime.getPositionY() - player.getPositionY() + player.screenY;
+
+                    // 2. Cek apakah Slime masuk layar (Optimasi biar ga berat)
+                    if (slime.getPositionX() + 48 > player.getPositionX() - player.screenX &&
+                        slime.getPositionX() - 48 < player.getPositionX() + player.screenX &&
+                        slime.getPositionY() + 48 > player.getPositionY() - player.screenY &&
+                        slime.getPositionY() - 48 < player.getPositionY() + player.screenY) {
+
+                        // Tentukan Warna
+                        if (slime.isAlive()) {
+                            gc.setFill(Color.GREEN);
+                        } else {
+                            gc.setFill(Color.DARKRED);
+                        }
+                        
+                        // 3. GAMBAR DI KOORDINAT SCREEN (bukan getPositionX lagi)
+                        gc.fillRect(slimeScreenX, slimeScreenY, 30, 30); 
+                        
+                        // Gambar Nama & HP Slime (ikut posisi screen juga)
+                        gc.setFill(Color.WHITE);
+                        gc.fillText(slime.getName(), slimeScreenX, slimeScreenY - 20);
+                        gc.fillText("HP: " + slime.getHealth(), slimeScreenX, slimeScreenY - 5);
+                    }
                 }
-                gc.fillRect(slime.getPositionX(), slime.getPositionY(), 30, 30); 
-                gc.setFill(Color.WHITE);
-                gc.fillText(slime.getName(), slime.getPositionX(), slime.getPositionY() - 20);
-                gc.fillText("HP: " + slime.getHealth(), slime.getPositionX(), slime.getPositionY() - 5);
-                
-              
                 break;
                 
             case GAME_OVER:

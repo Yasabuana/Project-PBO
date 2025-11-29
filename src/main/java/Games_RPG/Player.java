@@ -8,7 +8,6 @@ package Games_RPG;
  *
  * @author yasaw
  */
-
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
@@ -26,34 +25,35 @@ public class Player extends Fighter {
     // --- VARIABEL ANIMASI ---
     private boolean isMoving = false;
     private boolean isAttacking = false;
-    
-    // Animasi Jalan
     private int spriteCounter = 0;
     private int spriteNum = 1; 
-    
-    // Animasi Serang
     private int attackIndex = 0;
     private long lastFrameTime = 0; 
     
-    // Variabel Arah (Default hadap kanan)
     private String facing = "right";
+
+    // --- POSISI LAYAR (KAMERA) ---
+    public final double screenX;
+    public final double screenY;
 
     public Player(GameLoop gp, String name, int x, int y) {
         super(name, x, y); 
         this.gp = gp;
         this.speed = 4; 
         
+        // Hitung tengah layar
+        screenX = gp.screenWidth / 2 - (gp.tileSize / 2);
+        screenY = gp.screenHeight / 2 - (gp.tileSize / 2);
+        
         loadImages();
     }
 
     private void loadImages() {
-        attackFrames = new Image[5]; // Sesuaikan dengan jumlah gambar attack (5)
-
+        attackFrames = new Image[5];
         try {
             idleImage = new Image(getClass().getResourceAsStream("/assets/characters/idle.png"));
             walk1 = new Image(getClass().getResourceAsStream("/assets/characters/walk1.png"));
             
-            // Coba load walk2, kalau ga ada pake walk1
             if (getClass().getResourceAsStream("/assets/characters/walk2.png") != null) {
                 walk2 = new Image(getClass().getResourceAsStream("/assets/characters/walk2.png"));
             } else {
@@ -74,29 +74,43 @@ public class Player extends Fighter {
     public void update(Set<KeyCode> activeKeys) {
         isMoving = false; 
 
-        // 1. LOGIKA GERAK & ANIMASI JALAN
+        // 1. LOGIKA GERAK (Hanya jalan kalau tidak sedang menyerang)
         if (!isAttacking) {
-            if (activeKeys.contains(KeyCode.W)) { moveUp(); isMoving = true; }
-            if (activeKeys.contains(KeyCode.S)) { moveDown(); isMoving = true; }
             
+            // Cek Tabrakan sebelum jalan
+            if (activeKeys.contains(KeyCode.W)) { 
+                if (gp.tileManager.checkCollision(this, "up") == false) {
+                    moveUp(); 
+                }
+                isMoving = true; 
+            }
+            if (activeKeys.contains(KeyCode.S)) { 
+                if (gp.tileManager.checkCollision(this, "down") == false) {
+                    moveDown(); 
+                }
+                isMoving = true; 
+            }
             if (activeKeys.contains(KeyCode.A)) { 
-                moveLeft(); isMoving = true; 
-                facing = "left"; // <--- Hadap Kiri
+                if (gp.tileManager.checkCollision(this, "left") == false) {
+                    moveLeft(); 
+                }
+                isMoving = true; 
+                facing = "left"; 
             }
             if (activeKeys.contains(KeyCode.D)) { 
-                moveRight(); isMoving = true; 
-                facing = "right"; // <--- Hadap Kanan
+                if (gp.tileManager.checkCollision(this, "right") == false) {
+                    moveRight(); 
+                }
+                isMoving = true; 
+                facing = "right"; 
             }
             
-            // Update Animasi Jalan (Ganti kaki)
+            // Update Animasi Jalan
             if (isMoving) {
                 spriteCounter++;
                 if (spriteCounter > 10) { 
-                    if (spriteNum == 1) {
-                        spriteNum = 2;
-                    } else {
-                        spriteNum = 1;
-                    }
+                    if (spriteNum == 1) spriteNum = 2;
+                    else spriteNum = 1;
                     spriteCounter = 0;
                 }
             } else {
@@ -104,13 +118,14 @@ public class Player extends Fighter {
             }
         }
 
-        // 2. LOGIKA SERANGAN
+        // 2. LOGIKA SERANGAN (Ini yang kemarin hilang!)
         if (activeKeys.contains(KeyCode.SPACE) && !isAttacking) {
             isAttacking = true;
             attackIndex = 0;
             lastFrameTime = System.nanoTime(); 
         }
         
+        // Update Frame Animasi Serangan
         if (isAttacking) {
             updateAttackAnimation();
         }
@@ -131,7 +146,6 @@ public class Player extends Fighter {
     public void draw(GraphicsContext gc) {
         Image imgToDraw = null;
 
-        // A. Pilih Gambar
         if (isAttacking && attackFrames != null) {
             if (attackIndex < 5 && attackFrames[attackIndex] != null) {
                 imgToDraw = attackFrames[attackIndex];
@@ -145,26 +159,24 @@ public class Player extends Fighter {
             imgToDraw = idleImage;
         }
 
-        // B. Gambar ke Layar dengan FLIP (Cermin)
         if (imgToDraw != null) {
             gc.setImageSmoothing(false);
             
             double visualSize = 96; 
-            double visualX = getPositionX() - (visualSize - 48) / 2;
-            double visualY = getPositionY() - (visualSize - 48) / 2;
+            
+            // Menggambar di posisi Layar (screenX/Y) agar kamera bekerja
+            double visualX = screenX - (visualSize - 48) / 2;
+            double visualY = screenY - (visualSize - 48) / 2;
 
             if (facing.equals("left")) {
-                // FLIP GAMBAR (Geser ke kanan, lalu gambar lebar negatif)
                 gc.drawImage(imgToDraw, visualX + visualSize, visualY, -visualSize, visualSize);
             } else {
-                // GAMBAR NORMAL
                 gc.drawImage(imgToDraw, visualX, visualY, visualSize, visualSize);
             }
             
         } else {
-            // Fallback Kotak Biru
             gc.setFill(javafx.scene.paint.Color.BLUE);
-            gc.fillRect(getPositionX(), getPositionY(), 48, 48);
+            gc.fillRect(screenX, screenY, 48, 48);
         }
     }
 }
