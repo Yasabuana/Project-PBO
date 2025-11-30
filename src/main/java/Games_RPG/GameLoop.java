@@ -18,7 +18,6 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.stage.Stage;
 
-
 public class GameLoop extends Application {
 
     final int originalTileSize = 16; 
@@ -61,7 +60,10 @@ public class GameLoop extends Application {
     
     // Waktu Global
     private long globalNanoTime; 
-
+    
+    //Audio Manager
+    private Audio_manager audioManager;
+    
     
     // private TileManager tileManager;
     // private EnemyManager enemyManager;
@@ -75,7 +77,12 @@ public class GameLoop extends Application {
     public void start(Stage primaryStage) {
         
         primaryStage.setTitle("Game RPG Project PBO - Kelompok 5");
-     
+        
+        //Inisialisasi audio manager
+        audioManager = new Audio_manager();
+        
+        //Load SoundEffect
+        audioManager.loadSoundEffect("Tebasan pedang", "asset_audio/Sword_Slash_sfx.wav");
 
         //VARIABEL SCREENWIDTH & HEIGHT 
         Canvas canvas = new Canvas(screenWidth, screenHeight);
@@ -101,6 +108,10 @@ public class GameLoop extends Application {
 
         // Set State Awal
         gameState = GameState.MENU;
+        
+        //Memulai BGM
+        audioManager.playBackgroundMusic();
+        audioManager.printAudioStatus();
 
         AnimationTimer gameLoop = new AnimationTimer() {
             @Override
@@ -120,6 +131,7 @@ public class GameLoop extends Application {
                 if (activeKeys.contains(KeyCode.ENTER)) {
                     gameState = GameState.PLAYING;
                     System.out.println("Game Started!");
+                    audioManager.playBackgroundMusic();
                 }
                 break;
                 
@@ -139,6 +151,7 @@ public class GameLoop extends Application {
                 if (activeKeys.contains(KeyCode.SPACE)) {
                     if ((globalNanoTime - lastPlayerAttackTime) > PLAYER_ATTACK_COOLDOWN_NS) {
                         if (getDistance(player, slime) < 50 && slime.isAlive()) {
+                            audioManager.playSoundEffect("Tebasan pedang");
                             player.basicAttack(slime); 
                             lastPlayerAttackTime = globalNanoTime;
                         }
@@ -232,6 +245,8 @@ public class GameLoop extends Application {
             case GAME_OVER:
                 if (activeKeys.contains(KeyCode.ENTER)) {
                     gameState = GameState.MENU;
+                    
+                    audioManager.playBackgroundMusic();
                 }
                 break;
         }
@@ -300,7 +315,7 @@ public class GameLoop extends Application {
         gc.setFill(Color.WHITE);
         gc.setFont(new Font("Arial", 40));
         // Posisi tengah dinamis
-        gc.fillText("RPG GAME PROJECT", screenWidth / 2 - 180, screenHeight / 2);
+        gc.fillText("Ardent Lands", screenWidth / 2 - 118, screenHeight / 2);
         gc.setFont(new Font("Arial", 20));
         gc.fillText("Press ENTER to Play", screenWidth / 2 - 100, screenHeight / 2 + 50);
     }
@@ -331,6 +346,8 @@ public class GameLoop extends Application {
         double dy = e1.getPositionY() - e2.getPositionY();
         return Math.sqrt(dx * dx + dy * dy);
     }
+    
+    
 }
 
 
